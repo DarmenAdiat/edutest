@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактировать тест</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            font-family: 'Poppins', Arial, sans-serif;
+            background-color: #f4f7fc;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background-color: #0b2c5b;
+            padding: 15px;
+            color: white;
+        }
+        .navbar .btn { margin-left: 10px; }
+        .container-content {
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 30px;
+            max-width: 1000px;
+            margin: 30px auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        h2, h3, h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            display: block;
+        }
+        .form-group input {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            width: 100%;
+            font-size: 14px;
+        }
+        .question-container {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        .answer-group {
+            margin-top: 15px;
+        }
+        .answer-group label {
+            margin-left: 10px;
+        }
+        .divider {
+            border-top: 1px solid #ddd;
+            margin: 20px 0;
+        }
+        .btn {
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        .btn-primary {
+            background-color: #0b2c5b;
+        }
+        .btn-primary:hover {
+            background-color: #1E90FF;
+        }
+        .btn-danger {
+            margin-left: 10px;
+        }
+        .tooltip-info {
+            font-size: 12px;
+            color: #555;
+            margin-top: -10px;
+            display: block;
+        }
+        .form-check-inline {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .form-check-label {
+            margin-left: 5px;
+            font-weight: 500;
+        }
+        .form-check .text-danger {
+            color: #dc3545;
+        }
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: #0b2c5b;
+            cursor: pointer;
+        }
+        .form-check-inline .form-check {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+<header class="navbar navbar-dark">
+    <div class="container">
+        <div>
+            <a href="{% url 'admin_page' %}" class="btn btn-outline-light">Назад</a>
+            <a href="{% url 'logout' %}" class="btn btn-outline-light">Выйти</a>
+        </div>
+    </div>
+</header>
+
+<div class="container-content">
+    <h2>Редактировать тест: {{ quiz.title }}</h2>
+    <p class="text-muted">На этой странице вы можете изменять вопросы и варианты ответов, а также добавлять новые.</p>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <!-- Вопросы -->
+        {{ question_formset.management_form }}
+
+        {% for question_form, answer_formset in question_forms_and_answers %}
+        <div class="question-container">
+            <h4>Вопрос {{ forloop.counter }}</h4>
+
+            <!-- Показываем поля вопроса -->
+            {{ question_form.id }}   {# hidden pk, если есть #}
+            {{ question_form.text }}
+            {{ question_form.DELETE }} Удалить вопрос?
+
+            <div class="answer-group">
+                <h5>Варианты ответов:</h5>
+
+                <!-- Показываем management_form инлайн-набора ответов -->
+                {{ answer_formset.management_form }}
+
+                {% for answer_form in answer_formset %}
+                <div class="form-group">
+                    {{ answer_form.text.label_tag }}
+                    {{ answer_form.text }}
+                </div>
+                <div class="form-check-inline">
+                    <div class="form-check">
+                        {{ answer_form.is_correct }}
+                        <label>Верный ответ</label>
+                    </div>
+                    <div class="form-check">
+                        {{ answer_form.DELETE }}
+                        <label class="text-danger">Удалить ответ</label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="divider"></div>
+
+        <!-- Кнопка добавления вопроса -->
+        <button type="button" class="btn btn-primary" onclick="addQuestion()">
+            Добавить новый вопрос
+        </button>
+
+        <!-- Сохранение -->
+        <button type="submit" class="btn btn-success mt-3">
+            Сохранить изменения
+        </button>
+    </form>
+</div>
+
+<script>
+    function addQuestion() {
+        // Находим контейнер "question-container" (шаблон для клонирования).
+        // В идеале вынести скрытый <template> и его клонировать, но для примера возьмём первый.
+        const questionContainer = document.querySelector('.question-container');
+        if (!questionContainer) {
+            alert('Нет примера для копирования. Добавьте вопрос через админку или сделайте extra=1.');
+            return;
+        }
+
+        // Увеличиваем общее количество форм (TOTAL_FORMS) в question_formset
+        const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
+        const currentCount = parseInt(totalFormsInput.value);
+        totalFormsInput.value = currentCount + 1;
+
+        // Клонируем "question-container"
+        const newContainer = questionContainer.cloneNode(true);
+
+        // Очищаем значения внутри нового вопроса
+        newContainer.querySelectorAll('*').forEach(el => {
+            // Меняем индексы form-0, form-1 и т.д. -> form-currentCount
+            if (el.name && el.name.includes('-')) {
+                el.name = el.name.replace(/\d+/, currentCount);
+                if (el.type === 'checkbox') el.checked = false;
+                if (el.type === 'text') el.value = '';
+            }
+            if (el.id && el.id.includes('-')) {
+                el.id = el.id.replace(/\d+/, currentCount);
+            }
+        });
+
+        // Меняем заголовок
+        const h4 = newContainer.querySelector('h4');
+        if (h4) {
+            h4.textContent = `Вопрос ${currentCount + 1}`;
+        }
+
+        // Ставим DELETE = false
+        const deleteCheckbox = newContainer.querySelector('input[name$="DELETE"]');
+        if (deleteCheckbox) {
+            deleteCheckbox.checked = false;
+        }
+
+        // Вставляем новый вопрос перед divider
+        const divider = document.querySelector('.divider');
+        document.querySelector('form').insertBefore(newContainer, divider);
+    }
+</script>
+</body>
+</html>
