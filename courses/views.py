@@ -1,4 +1,3 @@
-# courses/views.py
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -9,6 +8,7 @@ from .forms import StudentRegistrationForm, LessonCreationForm, ModuleCreationFo
 from .models import User, Lesson, Module, Course, StudentProgress,  Student
 import logging
 from .managment import Command
+import json  # Добавьте в начало файла, если его нет
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -145,37 +145,49 @@ def admin_page(request):
 
 @login_required
 def student_page(request):
-    # Получаем объект Student, связанный с текущим пользователем
     student = get_object_or_404(Student, user=request.user)
-    courses = student.courses.all()  # Получаем курсы, к которым записан студент
+    courses = student.courses.all()
 
-    # Получаем прогресс для каждого курса
     progress_data = []
     for course in courses:
         progress = StudentProgress.objects.filter(user=request.user, course=course).first()
-        progress_data.append({
-            'course': course,
-            'progress': progress.progress if progress else 0,
-        })
+        if progress:
+            # Вычисляем общий прогресс просмотра видео
+            video_progress = 0
+            if progress.video_progress:
+                # Получаем все уроки курса
+                all_lessons = []
+                for module in course.modules.all():
+                    all_lessons.extend(list(module.lessons.all()))
+                
+                if all_lessons:
+                    # Считаем средний прогресс по всем видео
+                    total_progress = 0
+                    completed_videos = 0
+                    for lesson in all_lessons:
+                        lesson_progress = progress.video_progress.get(str(lesson.id), 0)
+                        if lesson_progress > 0:
+                            completed_videos += 1
+                            total_progress += float(lesson_progress)
+                    
+                    if completed_videos > 0:
+                        video_progress = int((total_progress / (completed_videos * 100)) * 100)
 
-    if request.method == 'POST':
-        course_code = request.POST.get('course_code')
-        try:
-            course = Course.objects.get(course_code=course_code)
-            student.courses.add(course)  # Добавляем курс к студенту
-            return redirect('student_page')
-        except Course.DoesNotExist:
-            error_message = "Курс с данным кодом не найден."
-            context = {
-                'courses': courses,
-                'progress_data': progress_data,
-                'error_message': error_message,
-            }
-            return render(request, 'courses/student_page.html', context)
+            progress_data.append({
+                'course': course,
+                'progress': progress.progress,
+                'video_progress': video_progress
+            })
+        else:
+            progress_data.append({
+                'course': course,
+                'progress': 0,
+                'video_progress': 0
+            })
 
     context = {
         'courses': courses,
-        'progress_data': progress_data,  # Прогресс для всех курсов
+        'progress_data': progress_data,
     }
     return render(request, 'courses/student_page.html', context)
 @login_required
@@ -709,19 +721,20 @@ def add_student(request):
 
 
 def student_details(request, user_id):
-    # Получаем объект студента на основе user_id
     student = get_object_or_404(Student, user_id=user_id)
-
+    
     # Подготовка данных о прогрессе
     progress_data = []
     for course in student.courses.all():
         progress = StudentProgress.objects.filter(user=student.user, course=course).first()
         progress_data.append({
-            'course': course.title,  # Название курса
-            'progress': progress.progress if progress else 0,  # Прогресс или 0, если данных нет
+            'course': {
+                'id': course.id,  # Добавляем id курса
+                'title': course.title
+            },
+            'progress': progress.progress if progress else 0
         })
 
-    # Передаем данные в шаблон
     context = {
         'student': student,
         'progress_data': progress_data,
@@ -784,5 +797,75 @@ def update_progress(request):
             return JsonResponse({'success': False, 'error': 'Курс или урок не найден.'})
     return JsonResponse({'success': False, 'error': 'Некорректный запрос.'})
 
+@csrf_exempt
+def save_video_progress(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            lesson_id = data.get('lesson_id')
+            course_id = data.get('course_id')
+            current_time = data.get('current_time')
+            
+            print(f"Saving progress: lesson_id={lesson_id}, time={current_time}")
+            
+            course = Course.objects.get(id=course_id)
+            # Получаем или создаем объект StudentProgress
+            student_progress, created = StudentProgress.objects.get_or_create(
+                user=request.user,
+                course=course,
+                defaults={'video_progress': {}}
+            )
+            
+            # Сохраняем прогресс видео в JSON поле
+            video_progress = student_progress.video_progress or {}  # Убеждаемся, что это словарь
+            video_progress[str(lesson_id)] = current_time
+            student_progress.video_progress = video_progress
+            student_progress.save()
+            
+            print(f"Saved progress: {student_progress.video_progress}")
+            
+            return JsonResponse({'success': True})
+        except Exception as e:
+            print(f"Error in save_video_progress: {str(e)}")
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
+def get_video_progress(request, lesson_id):
+    try:
+        course = Course.objects.get(modules__lessons__id=lesson_id)
+        # Получаем или создаем объект StudentProgress
+        student_progress, created = StudentProgress.objects.get_or_create(
+            user=request.user,
+            course=course,
+            defaults={'video_progress': {}}
+        )
+        progress = student_progress.video_progress.get(str(lesson_id), 0)
+        print(f"Video progress for lesson {lesson_id}: {student_progress.video_progress}")
+        return JsonResponse({'progress': progress})
+    except Exception as e:
+        print(f"Error in get_video_progress: {str(e)}")
+        return JsonResponse({'progress': 0})
 
 
+def get_course_progress(request, course_id):
+    try:
+        course = Course.objects.get(id=course_id)
+        # Получаем существующий прогресс
+        progress = StudentProgress.objects.filter(
+            user=request.user,
+            course=course
+        ).first()
+        
+        return JsonResponse({
+            'progress': progress.progress if progress else 0
+        })
+    except Course.DoesNotExist:
+        return JsonResponse({'error': 'Курс не найден'}, status=404)
+
+def get_course_lessons(request, course_id):
+    course = Course.objects.get(id=course_id)
+    lesson_ids = []
+    for module in course.modules.all():
+        lesson_ids.extend(module.lessons.values_list('id', flat=True))
+    return JsonResponse(lesson_ids, safe=False)

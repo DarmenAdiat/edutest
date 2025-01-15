@@ -56,7 +56,11 @@ urlpatterns = [
     path('delete_user/<int:user_id>/', views.delete_user, name='delete_user'),
     path('update_progress/', views.update_progress, name='update_progress'),
 
+    path('api/save_video_progress/', views.save_video_progress, name='save_video_progress'),
+    path('api/get_video_progress/<int:lesson_id>/', views.get_video_progress, name='get_video_progress'),
+    path('api/get_course_progress/<int:course_id>/', views.get_course_progress, name='get_course_progress'),
+    path('api/get_course_lessons/<int:course_id>/', views.get_course_lessons, name='get_course_lessons'),
+
 ]
 from django.conf import settings
 from django.conf.urls.static import static
-

@@ -113,10 +113,15 @@ class StudentProgress(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     completed_lessons = models.ManyToManyField(Lesson, blank=True)
     progress = models.IntegerField(default=0)
+    video_progress = models.JSONField(default=dict)
 
     def save(self, *args, **kwargs):
-        self.progress = max(0, min(self.progress, 100))  # Ограничиваем значение от 0 до 100
+        if self.video_progress is None:
+            self.video_progress = {}
         super().save(*args, **kwargs)
+
+    class Meta:
+        unique_together = ('user', 'course')
 
 
 class QuizResult(models.Model):
